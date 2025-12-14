@@ -23,6 +23,7 @@ type
     FModified: Boolean;
     FOriginalFormat: TStreamOriginalFormat;
     procedure CheckRootProp(const AName, AValue: string);
+    function IsNonRootTrigger(const ALine: string): Boolean;
     procedure RemoveRootProp(const AName, AValue: string);
   public
     constructor Create(const AFileName: string);
@@ -238,22 +239,39 @@ begin
 end;
 
 procedure TDfmHandler.CheckRootProp(const AName, AValue: string);
+
 var
-  I: Integer;
   LeadIn: string;
-  line: string;
 begin
   LeadIn := '  ' + AName + ' = ';
   { skip first line! }
-  for I := 1 to Content.Count - 1 do begin
-    line := Content[I];
+  for var I := 1 to Content.Count - 1 do begin
+    var line := Content[I];
+    { check for existing property with any value }
     if line.StartsWith(LeadIn) then Break;
-    if line.StartsWith('  object') or line.StartsWith('end') then begin
+
+    { now children are following and we need to insert the property }
+    if IsNonRootTrigger(line) then begin
       Content.Insert(I, LeadIn + AValue);
       FModified := True;
       Break;
     end;
   end;
+end;
+
+function TDfmHandler.IsNonRootTrigger(const ALine: string): Boolean;
+const
+  { leading blanks (indentation) is crucial!
+    The two spaces are hard coded in System.Classes.
+  }
+  cTriggers: TArray<string> = ['  object ', '  inherited ', '  inline ', 'end'];
+begin
+  Result := True;
+  for var S in cTriggers do begin
+    if ALine.StartsWith(S) then
+      Exit;
+  end;
+  Result := False;
 end;
 
 procedure TDfmHandler.RemoveRootProp(const AName, AValue: string);
@@ -266,6 +284,10 @@ begin
   { skip first line! }
   for I := 1 to Content.Count - 1 do begin
     line := Content[I];
+    { when only children are following there is nothing to remove }
+    if IsNonRootTrigger(line) then Break;
+
+    { check for property name and value }
     if line.StartsWith(LeadIn) then begin
       Content.Delete(I);
       FModified := True;
