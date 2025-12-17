@@ -16,13 +16,14 @@ resourcestring
   SDescription = 'Fixes wrong scaling when opening inherited frames in High DPI designer';
 
 type
-  TDfmHandler = class
+  TFrameDfmHandler = class
   private
     FContent: TStringList;
     FFileName: string;
     FModified: Boolean;
     FOriginalFormat: TStreamOriginalFormat;
     procedure CheckRootProp(const AName, AValue: string);
+    function CheckValidInheritedFrameLine(const Line: string): Boolean;
     function IsNonRootTrigger(const ALine: string): Boolean;
     procedure RemoveRootProp(const AName, AValue: string);
   public
@@ -172,7 +173,7 @@ var
   dfmName: string;
 begin
   if HasWritableDFM(AFileName, dfmName) then begin
-    var handler := TDfmHandler.Create(dfmName);
+    var handler := TFrameDfmHandler.Create(dfmName);
     try
       handler.RemoveAddedProperties;
     finally
@@ -186,7 +187,7 @@ var
   dfmName: string;
 begin
   if HasWritableDFM(AFileName, dfmName) then begin
-    var handler := TDfmHandler.Create(dfmName);
+    var handler := TFrameDfmHandler.Create(dfmName);
     try
       handler.CheckMissingProperties;
     finally
@@ -214,13 +215,13 @@ begin
   end;
 end;
 
-constructor TDfmHandler.Create(const AFileName: string);
+constructor TFrameDfmHandler.Create(const AFileName: string);
 begin
   inherited Create;
   LoadFromFile(AFileName);
 end;
 
-destructor TDfmHandler.Destroy;
+destructor TFrameDfmHandler.Destroy;
 begin
   if FModified then
     SaveToFile(FileName);
@@ -228,25 +229,26 @@ begin
   inherited Destroy;
 end;
 
-procedure TDfmHandler.CheckMissingProperties;
+procedure TFrameDfmHandler.CheckMissingProperties;
 begin
   CheckRootProp('PixelsPerInch', '96');
 end;
 
-procedure TDfmHandler.RemoveAddedProperties;
+procedure TFrameDfmHandler.RemoveAddedProperties;
 begin
   RemoveRootProp('PixelsPerInch', '96');
 end;
 
-procedure TDfmHandler.CheckRootProp(const AName, AValue: string);
+procedure TFrameDfmHandler.CheckRootProp(const AName, AValue: string);
 
 var
   LeadIn: string;
 begin
   LeadIn := '  ' + AName + ' = ';
-  { skip first line! }
-  for var I := 1 to Content.Count - 1 do begin
+  for var I := 0 to Content.Count - 1 do begin
     var line := Content[I];
+    if not CheckValidInheritedFrameLine(line) then Break;
+
     { check for existing property with any value }
     if line.StartsWith(LeadIn) then Break;
 
@@ -259,7 +261,20 @@ begin
   end;
 end;
 
-function TDfmHandler.IsNonRootTrigger(const ALine: string): Boolean;
+function TFrameDfmHandler.CheckValidInheritedFrameLine(const Line: string): Boolean;
+begin
+  Result := False;
+
+  { inherited frames start with inherited in the first line }
+  if line.StartsWith('object') then Exit;
+
+  { TextHeight is only (and always) present in a form }
+  if line.StartsWith('  TextHeight = ') then Exit;
+
+  Result := True;
+end;
+
+function TFrameDfmHandler.IsNonRootTrigger(const ALine: string): Boolean;
 const
   { leading blanks (indentation) is crucial!
     The two spaces are hard coded in System.Classes.
@@ -274,7 +289,7 @@ begin
   Result := False;
 end;
 
-procedure TDfmHandler.RemoveRootProp(const AName, AValue: string);
+procedure TFrameDfmHandler.RemoveRootProp(const AName, AValue: string);
 var
   I: Integer;
   LeadIn: string;
@@ -284,6 +299,8 @@ begin
   { skip first line! }
   for I := 1 to Content.Count - 1 do begin
     line := Content[I];
+    if not CheckValidInheritedFrameLine(line) then Break;
+
     { when only children are following there is nothing to remove }
     if IsNonRootTrigger(line) then Break;
 
@@ -296,7 +313,7 @@ begin
   end;
 end;
 
-procedure TDfmHandler.LoadFromFile(const AFileName: string);
+procedure TFrameDfmHandler.LoadFromFile(const AFileName: string);
 var
   inStream: TFileStream;
   txtStream: TMemoryStream;
@@ -319,7 +336,7 @@ begin
   end;
 end;
 
-procedure TDfmHandler.SaveToFile(const AFileName: string);
+procedure TFrameDfmHandler.SaveToFile(const AFileName: string);
 var
   outStream: TFileStream;
   txtStream: TMemoryStream;
